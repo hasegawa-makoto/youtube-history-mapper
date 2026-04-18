@@ -1,10 +1,11 @@
 let watchStartTime: number | null = null;
 let currentVideoId: string | null = null;
-let lastSaveTime: number | null = null;
 let currentRecordId: number | null = null;
+let currentVideoData: any = null;
+let extractionIntervalId: number | null = null;
+let activePollingId: number | null = null;
 
-const MIN_WATCH_TIME_TO_SAVE_SECONDS = 10;
-const SAVE_INTERVAL_MS = 30000;
+const SAVE_INTERVAL_MS = 5000; // Save more frequently to capture real-time data
 
 function getVideoId(): string | null {
   const urlParams = new URLSearchParams(window.location.search);
@@ -53,19 +54,23 @@ async function saveCurrentRecord() {
   const now = Date.now();
   const watchTimeSeconds = Math.floor((now - watchStartTime) / 1000);
 
-  if (watchTimeSeconds < MIN_WATCH_TIME_TO_SAVE_SECONDS) return;
+  let videoData = currentVideoData;
 
-  // Prevent spamming saves too frequently
-  if (lastSaveTime && now - lastSaveTime < SAVE_INTERVAL_MS) return;
+  // We are ready to save the first time for this video, or updating.
+  const isInitialSave = currentRecordId === null;
 
-  const videoData = extractVideoData();
-
-  // Don't save if we couldn't extract basic info
-  if (!videoData.title || !videoData.channelName) return;
+  if (isInitialSave || !videoData) {
+    videoData = extractVideoData();
+    // Don't save if we couldn't extract basic info
+    if (!videoData.title || !videoData.channelName) {
+      return;
+    }
+    currentVideoData = videoData;
+  }
 
   const record: any = {
     ...videoData,
-    timestamp: now,
+    timestamp: isInitialSave ? now : (watchStartTime || now), // Keep original timestamp
     watchTimeSeconds,
     extractedKeywords: [],
   };
@@ -84,13 +89,27 @@ async function saveCurrentRecord() {
 
   chrome.runtime.sendMessage({ type: 'SAVE_VIDEO_RECORD', data: record }, (response) => {
     if (chrome.runtime.lastError) {
-      console.error('Error sending message:', chrome.runtime.lastError);
+      console.error('[YouTube History Mapper] Error sending message:', chrome.runtime.lastError);
     } else if (response && response.success) {
-      lastSaveTime = now;
+      if (isInitialSave) {
+        console.log(`[YouTube History Mapper] Detected new video: "${videoData.title}"`);
+      }
       currentRecordId = response.id;
-      console.log('Video record saved/updated successfully.');
+      console.log(`[YouTube History Mapper] Saved/Updated record ID: ${response.id} | Watch Time: ${watchTimeSeconds}s`);
     }
   });
+}
+
+// Ensure we clean up any running intervals
+function clearActiveIntervals() {
+  if (activePollingId !== null) {
+    window.clearInterval(activePollingId);
+    activePollingId = null;
+  }
+  if (extractionIntervalId !== null) {
+    window.clearInterval(extractionIntervalId);
+    extractionIntervalId = null;
+  }
 }
 
 function handleVideoChange() {
@@ -101,14 +120,43 @@ function handleVideoChange() {
       // Save data for the previous video before switching
       saveCurrentRecord();
     }
+    clearActiveIntervals();
+
     currentVideoId = newVideoId;
     watchStartTime = newVideoId ? Date.now() : null;
-    lastSaveTime = null;
     currentRecordId = null;
+    currentVideoData = null;
+
+    if (newVideoId) {
+      // Initial aggressive polling to wait for DOM elements to load on SPA transitions
+      extractionIntervalId = window.setInterval(() => {
+        const data = extractVideoData();
+        if (data.title && data.channelName) {
+          // As soon as data is ready, do the first save and stop aggressive polling
+          if (extractionIntervalId !== null) {
+            window.clearInterval(extractionIntervalId);
+            extractionIntervalId = null;
+          }
+          saveCurrentRecord();
+
+          // Start the regular save interval
+          activePollingId = window.setInterval(() => {
+            if (currentVideoId && !document.hidden) {
+              saveCurrentRecord();
+            }
+          }, SAVE_INTERVAL_MS);
+        }
+      }, 1000);
+    }
   }
 }
 
-// Observe URL changes for SPAs (Single Page Applications) like YouTube
+// 1. Listen for YouTube's custom SPA navigation event
+document.addEventListener('yt-navigate-finish', () => {
+  handleVideoChange();
+});
+
+// 2. Also keep the MutationObserver as a fallback for some edge cases
 let lastUrl = location.href;
 new MutationObserver(() => {
   const url = location.href;
@@ -118,14 +166,7 @@ new MutationObserver(() => {
   }
 }).observe(document, {subtree: true, childList: true});
 
-// Also check periodically in case the user stays on the same video for a long time
-setInterval(() => {
-  if (currentVideoId && !document.hidden) {
-    saveCurrentRecord();
-  }
-}, SAVE_INTERVAL_MS);
-
-// Initial setup
+// Initial setup on hard reload
 handleVideoChange();
 
 // Handle tab close or navigation away
