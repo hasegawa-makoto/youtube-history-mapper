@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube History Mapper",
+  "version": "1.0.0",
+  "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": ["*://*.youtube.com/*"],
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["src/content.ts"]
+    }
+  ],
+  "action": {
+    "default_title": "Open Dashboard"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["dict/*", "src/dashboard/index.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube History Mapper Dashboard</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="dashboard-container">
+    <header>
+      <h1>YouTube History Mapper Dashboard</h1>
+    </header>
+
+    <main>
+      <section class="card" id="timeline-section">
+        <h2>30-Day Watch Timeline</h2>
+        <div class="chart-container timeline-container">
+          <canvas id="timelineChart"></canvas>
+        </div>
+      </section>
+
+      <section class="card" id="channel-rank-section">
+        <h2>Channel Watch Time Ranking</h2>
+        <div class="chart-container">
+          <canvas id="channelRankChart"></canvas>
+        </div>
+      </section>
+
+      <section class="card" id="network-section">
+        <h2>Keyword Co-occurrence Network</h2>
+        <div id="networkGraph"></div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
